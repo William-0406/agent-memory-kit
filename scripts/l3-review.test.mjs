@@ -1,0 +1,37 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, dirname } from 'node:path';
+import { readCommittedReview } from './l3-review.mjs';
+
+test('L3 审阅只接受已提交且有接力依据的记录', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'memory-l3-review-'));
+  const git = (...args) => execFileSync('git', args, {cwd, encoding:'utf8', stdio:['ignore','pipe','pipe']}).trim();
+  const write = (path, value) => { mkdirSync(dirname(join(cwd,path)), {recursive:true}); writeFileSync(join(cwd,path), value); };
+  const commit = (...paths) => { git('add','--',...paths); git('-c','user.name=Test','-c','user.email=test@example.invalid','-c','core.hooksPath=NUL','commit','-qm','测试审阅'); };
+  git('init','-q');
+  const file = '交接/2026-09/原记录.md';
+  const handoff = '交接/2026-09/审阅.md';
+  const receipt = '记忆网关/L3审阅.json';
+  write(file,'# 原记录\n项目事件'); commit(file);
+  const through = git('rev-parse','HEAD');
+  assert.equal(readCommittedReview(cwd),null);
+  const review={version:1,reviewedThrough:through,handoff,files:[file],outcome:'no-qualified-content',reason:'仅有项目事件'};
+  write(receipt,JSON.stringify(review));
+  write(handoff,`## L3 审阅\n${file}\n仅有项目事件`);
+  git('add','--',receipt,handoff);
+  assert.equal(readCommittedReview(cwd),null,'暂存但未提交不能重置提醒');
+  commit(receipt,handoff);
+  assert.equal(readCommittedReview(cwd).through,through);
+  write(handoff,'# 审阅\n没有对应范围'); commit(handoff);
+  assert.throws(()=>readCommittedReview(cwd),/接力缺少/);
+  write(handoff,`## L3 审阅\n${file}\n仅有项目事件`); commit(handoff);
+  write(receipt,JSON.stringify({...review,files:['工作/不存在.md']})); commit(receipt);
+  assert.throws(()=>readCommittedReview(cwd),'范围中不存在的文件不能充当审阅证据');
+  write(receipt,JSON.stringify({...review,reason:''})); commit(receipt);
+  assert.throws(()=>readCommittedReview(cwd),/格式不完整/);
+  write(receipt,JSON.stringify({...review,files:['工作/answers.sealed.md']})); commit(receipt);
+  assert.throws(()=>readCommittedReview(cwd),/范围无效/);
+});

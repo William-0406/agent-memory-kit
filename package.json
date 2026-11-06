@@ -1,0 +1,26 @@
+{
+  "name": "agent-memory-kit",
+  "version": "0.1.0",
+  "private": false,
+  "description": "用 Markdown 文件给 AI 助手做一套跨会话的长期记忆：分层存放、带来源标记、有取用预算。",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "init": "node scripts/init.mjs",
+    "check": "node scripts/memory-check.mjs",
+    "test": "node --test",
+    "start": "node scripts/memory-startup.mjs"
+  },
+  "keywords": [
+    "ai",
+    "agent",
+    "memory",
+    "markdown",
+    "context",
+    "knowledge-base",
+    "llm"
+  ]
+}

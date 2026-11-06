@@ -1,0 +1,7 @@
+{
+  "_说明": "这是本记忆库的配置文件。改这里就能改掉所有脚本里用到的人名和时区，不用动代码。",
+  "owner": "我",
+  "timezone": "Asia/Shanghai",
+  "handoffSides": ["codex", "kimi", "workbuddy", "dsh"],
+  "lang": "zh"
+}

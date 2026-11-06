@@ -1,0 +1,20 @@
+#!/bin/sh
+# 记忆库体检 · 提交前自动跑
+# 启用一次即可：git config core.hooksPath .githooks
+#
+# 真正干活的是 scripts/hook-run.mjs（用 Node 写，三个系统上行为一致，报错信息是人话）。
+# 这里只负责在最前面拦住两种情况：没有 node、或者这个仓库还没装好。
+#
+# 任何一次想跳过：git commit --no-verify（要在提交信息里写明为什么）
+
+command -v node >/dev/null 2>&1 || {
+  echo "记忆库体检：没找到 node，跳过检查。装好 Node.js 后才会有提交前的自动检查。"
+  exit 0
+}
+
+[ -f scripts/hook-run.mjs ] || {
+  echo "记忆库体检：还没有 scripts/hook-run.mjs，跳过检查。"
+  exit 0
+}
+
+node scripts/hook-run.mjs

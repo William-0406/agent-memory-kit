@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+# 只读权限就够：这个工作流只跑测试，不发布、不推标签。
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: 测试 · Node ${{ matrix.node }}
+    runs-on: ubuntu-latest
+    strategy:
+      # 一个版本挂了，另一个版本的结果照样要看，不要互相取消。
+      fail-fast: false
+      matrix:
+        node: ['20', '22']
+
+    steps:
+      - name: 取出代码
+        uses: actions/checkout@v4
+
+      - name: 装 Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      # 本项目零依赖，没有 npm install 这一步。装出来确认矩阵真的生效了。
+      - name: 打印 Node 版本
+        run: node --version
+
+      # 注意：这里故意不写 `node --test scripts/`。
+      # 那种「传一个目录」的写法在 Node 21 起会被当成模块入口解析，直接报
+      # Error: Cannot find module '.../scripts'，一个测试都不跑。
+      # 不带参数的形式让测试运行器自己发现 **/*.test.mjs，18/20/22/24 都一样。
+      - name: 跑测试
+        run: node --test
+
+      # 不启用 .githooks：提交门禁是给本地提交用的，
+      # 在 CI 里没有提交动作，启用它只会多一层让人困惑的耦合。
