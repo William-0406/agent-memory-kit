@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // 从原文件即时生成开场入口，不维护第二份事实摘要。
-import {readFileSync, readdirSync, statSync, existsSync} from 'node:fs';
+import {readFileSync, readdirSync, existsSync} from 'node:fs';
 import {resolve, join, dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {buildIndex, compileContext, formatContext} from './memory-gateway.mjs';
@@ -66,13 +66,14 @@ function latestHandoff(root) {
   const files = [];
   for (const month of readdirSync(dir).filter(x=>/^\d{4}-\d{2}$/.test(x))) {
     for (const name of readdirSync(join(dir,month))) {
-      if (HANDOFF_NAME.test(name)) {
-        const file=`交接/${month}/${name}`;
-        files.push({file,mtime:statSync(join(dir,month,name)).mtimeMs});
-      }
+      if (HANDOFF_NAME.test(name)) files.push({file:`交接/${month}/${name}`});
     }
   }
-  return files.sort((a,b)=>b.mtime-a.mtime || b.file.localeCompare(a.file))[0]?.file;
+  // [2026-11-09] 原按 mtime 排序，会踩一个很隐晦的坑：**改任何旧接力都会让它变成"最新"**，
+  // 于是开场读到的是被订正的旧接力，今天那份反倒被顶掉，状态直接过期。
+  // 接力文件名本身就带 `YYYY-MM-DD_HHmm`，**按文件名排序才是它真实的写作时序**。
+  // mtime 只反映"谁最后被碰过"，不反映"谁是最后写的"。
+  return files.sort((a,b)=>b.file.localeCompare(a.file))[0]?.file;
 }
 
 // 每日简报原来靠外部定时任务，任务停掉后就断了。改成「当天第一次开场补发」：

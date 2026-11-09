@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, chmodSync, readdirSync, statSync, existsSync} from 'node:fs';
+import {readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, chmodSync, readdirSync, statSync, existsSync, utimesSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join, dirname, resolve, sep} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -229,7 +229,7 @@ test('真实提交检查拒绝无准入内容与缺回归关联，修正后放�
   write(handoff,body);git('add','--',handoff);
   result=check();assert.equal(result.status,1);assert.match(result.output,/回归案例/);
   write(handoff,body+'\n回归案例：identity-correction\n');
-  write('记忆网关/回归案例.jsonl',JSON.stringify({id:'identity-correction',query:'这个电话里没有我和 kelly 是 rachel'})+'\n');
+  write('记忆网关/回归案例.jsonl',JSON.stringify({id:'identity-correction',query:'这个电话里没有我和 甲 是 乙'})+'\n');
   git('add','--',handoff,'记忆网关/回归案例.jsonl');assert.equal(check().status,0);
 });
 
@@ -359,6 +359,38 @@ test('中文文件名的接力照样被认出：不靠 git 配置也能拦下差
   // 而且拦的理由是**文件名日期**，说明中文路径被正确解析了（旧代码这里会是 0 = 放行）
   assert.match(result.output,/文件名的日期/);
   assert.match(result.output,/差 1 天/);
+});
+
+// [2026-11-09] 回归案例：改旧接力不能让旧接力变成「最新一份」。
+// 起因：订正一份 11-06 的接力后，那份旧接力的 mtime 变成最新，开场 `latestHandoff`
+// 按 mtime 取「最新」，于是读到了被订正的旧接力，今天那份反被顶掉，状态直接过期。
+// 正确口径：文件名里就带 `YYYY-MM-DD_HHmm`，**写作时序应看文件名，不是 mtime**。
+test('开场取最新接力看文件名日期，不因改动旧接力而读到过期状态', t => {
+  const root = mkdtempSync(join(tmpdir(), 'latest-handoff-'));
+  t.after(() => { rmSync(root, {recursive: true, force: true}); });
+  writeFileSync(join(root, 'AGENTS.md'), [
+    '<!-- TURN_RULES_START -->', '> ## 规则', '> ### 固定条', '> 固定条正文。',
+    '> 1. 热点一', '> 2. 热点二', '> 3. 热点三', '<!-- TURN_RULES_END -->', '',
+  ].join('\n'));
+  writeFileSync(join(root, '待办与承诺.md'), '## 待办目录\n\n- [ ] **唯一一条**\n');
+  writeFileSync(join(root, '我是谁.md'),
+    '## 基本\n\n- 称呼 我\n\n## 沟通偏好\n\n- 简洁\n\n## 他要这东西成为什么\n\n- 能跑\n');
+  writeFileSync(join(root, '纠错记录.md'), '- [2026-11-06] 样例纠错一条\n');
+  writeFileSync(join(root, '接力规则.md'), '## 一、共同原则\n\n- 只此一份\n\n## 三、什么时候写\n\n- 有后续价值时\n');
+
+  const dir = join(root, '交接', '2026-11');
+  mkdirSync(dir, { recursive: true });
+  const older = join(dir, '2026-11-06_1805_dsh.md');
+  const newer = join(dir, '2026-11-09_1028_dsh.md');
+  writeFileSync(older, '## 当前状态\n\n- 旧的那份，状态已过期\n');
+  writeFileSync(newer, '## 当前状态\n\n- 今天这份才是现行状态\n');
+  // 关键动作：把旧接力的 mtime 顶到比新接力更晚，模拟「订正历史接力」。
+  const future = new Date(Date.now() + 3600_000);
+  utimesSync(older, future, future);
+
+  const text = openingSources(root).map(p => p.text).join('\n');
+  assert.ok(text.includes('今天这份才是现行状态'), '必须读到按文件名最新的那份');
+  assert.ok(!text.includes('旧的那份，状态已过期'), '不能因为改过旧接力就读到过期状态');
 });
 
 test('引用转写前必须有说话人对照：把别人的话记成主人说的要被拦下', () => {
