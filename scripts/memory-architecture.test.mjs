@@ -9,7 +9,7 @@ import {extractTurnRules} from './turn-rules.mjs';
 import {classifyHit, parseScores, correctionCoverage, HANDOFF_NAME} from './rule-scores.mjs';
 import {validateAdmission, checkAdmissions, LONG_TERM_PATH} from './memory-admission.mjs';
 import {startupBudget, renderStartup, todoIndex, openingSources} from './memory-startup.mjs';
-import {buildIndex} from './memory-gateway.mjs';
+import {buildIndex, findSelfVoid} from './memory-gateway.mjs';
 import {checkSpeakerMaps} from './speaker-map.mjs';
 import {OWNER} from './profile.mjs';
 
@@ -391,6 +391,26 @@ test('开场取最新接力看文件名日期，不因改动旧接力而读到�
   const text = openingSources(root).map(p => p.text).join('\n');
   assert.ok(text.includes('今天这份才是现行状态'), '必须读到按文件名最新的那份');
   assert.ok(!text.includes('旧的那份，状态已过期'), '不能因为改过旧接力就读到过期状态');
+});
+
+// [2026-11-09] 「本节已作废」这条正则单独用会误报，实测 7 个命中里 4 个是假的。
+// 三道筛分别是：引用的不算、跨表格单元格的不算、当名词用的不算。
+// 这里逐条钉住——漏掉任何一道，讲缺陷的文档自己会被判成作废，而**没有任何提示**。
+test('失效标记三道筛：引用/跨单元格/当名词用的都不算作废', () => {
+  // 真作废：要认出来
+  assert.ok(findSelfVoid('本节内容已作废，改用新版。'), '本节已作废应被认出');
+  assert.ok(findSelfVoid('以下内容不再适用。'), '以下不再适用应被认出');
+  // ① 引用的不算（讲这个缺陷的文档会原样引一遍）
+  assert.equal(findSelfVoid('规则里写着「🔴 **[2026-08-18] 本节部分内容已作废**」这一条。'), null, '整段引用不算作废');
+  assert.equal(findSelfVoid('原文是“本节内容已作废”，只是引述。'), null, '中文引号引用不算作废');
+  // ② 跨表格单元格的不算
+  assert.equal(findSelfVoid('| 本文件的主筛子 | 🔴 作废 |'), null, '跨单元格不算作废');
+  // ③ 当名词用的不算
+  assert.equal(findSelfVoid('本节列全作废项，供核对。'), null, '「作废项」是名词，不算');
+  // 否定句不算
+  assert.equal(findSelfVoid('本次没有被推翻。'), null, '否定句不算作废');
+  // 普通内容不算
+  assert.equal(findSelfVoid('这一节讲怎么找候选人。'), null);
 });
 
 test('引用转写前必须有说话人对照：把别人的话记成主人说的要被拦下', () => {

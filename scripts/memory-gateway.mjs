@@ -56,9 +56,28 @@ const DATE_RE = /\b20\d{2}-\d{2}-\d{2}\b/g;
 //    整节并没有作废；把它算进来就会误伤。所以裸的「上面」不算，必须带 节/文/段/表/内容/部分。
 const VOID_SELF_RE =
   /(?:本节|本文|本段|本表|本小节|本文件|该节|这些内容|这一节)[^\n]{0,32}(?:作废|失效|过期|不再适用|已被推翻|已推翻|已订正|已降级)|(?:以上|以下|下述|下列|上述|下面(?:写的|列的)?)(?:内容|部分|各|所有|的[^\n]{0,10})[^\n]{0,20}(?:作废|失效|不再适用|已被推翻|已推翻|已订正|已降级)/;
-// 正文里带失效语气、且需要让读者看见的那几句（摘录用）。
-const VOID_LINE_RE = /作废|失效|已降级|已被推翻|不再适用|已订正|被否决/;
 const NEGATED_VOID_RE = /(?:没有|未被|从未|并未|不曾|不是|不算|不存在)[^\n]{0,10}(?:推翻|作废|失效|降级|否决)/g;
+// [2026-11-05] 上面那条正则单独用会误报，实测 7 个命中里 4 个是假的，所以匹配完还要过三道筛：
+//   ① **引用的不算**：写文档讲这个缺陷时会把「本节部分内容已作废」原样引一遍，
+//      结果讲缺陷的文档自己被判成作废。
+//      所以先把整段引号内容剥掉再匹配——不能只看前一个字，因为引用里常夹加粗
+//      （`「🔴 **[2026-08-18 回测后大幅订正] 本节部分内容已作废**」`），紧邻的前一个字只是空格。
+//   ② **跨表格单元格的跳过**：表格里「本文件的主筛子」和「作废」分处两个单元格，
+//      中间隔着 `** | 🔴 **`，连起来读根本不是一句话。
+//   ③ **当名词用的不算**：「本节列全作废项」是在说这一节**列的是**作废项，不是这一节作废。
+//      「项」这个字落在正则匹配之外，所以要顺着匹配末尾往后看一个字。
+const QUOTED_RE = /「[^」\n]{0,200}」|『[^』\n]{0,200}』|"[^"\n]{0,200}"|“[^”\n]{0,200}”/g;
+// 导出只为让回归测试直接钉住这三道筛（2026-11-09）。它不是对外 API。
+export function findSelfVoid(text) {
+  const cleaned = text.replace(NEGATED_VOID_RE, '').replace(QUOTED_RE, '　');
+  const hit = cleaned.match(VOID_SELF_RE);
+  if (!hit) return null;
+  const at = hit.index ?? cleaned.indexOf(hit[0]);
+  if (/[|｜]/.test(hit[0])) return null;
+  const trailing = cleaned.slice(at + hit[0].length, at + hit[0].length + 2);
+  if (/^(?:项|清单|记录|列表|一览|表|标记)/.test(trailing)) return null;
+  return hit[0];
+}
 
 const STOP_TOKENS = new Set([
   '一个', '一些', '这个', '那个', '是否', '是不是', '可以', '应该', '需要', '怎么', '什么',
@@ -184,7 +203,7 @@ function parseMarkdown(file, text) {
       const activeRule = heading.match(/\b(L2-\d+)\b/)?.[1] || null;
       // 自己这一节说「本节已作废」时，把那句话原样留下来。否定句先剥掉，
       // 否则「本次没有被推翻」会被当成作废。
-      const voidHit = part.replace(NEGATED_VOID_RE, '').match(VOID_SELF_RE);
+      const voidHit = findSelfVoid(part);
       chunks.push({
         id: sha256(`${file}\n${heading}\n${ordinal}\n${part}`).slice(0, 16),
         file,
